@@ -339,7 +339,13 @@ function rr(ctx,x,y,w,h,r){
 
 function finishStrip(canvas) {
   // Cache the final image as a data URL
-  photoDataUrl = canvas.toDataURL('image/jpeg', 0.93);
+  try {
+    photoDataUrl = canvas.toDataURL('image/jpeg', 0.93);
+  } catch (e) {
+    console.warn('Canvas tainted - download via server required');
+    // Will need to use the server workaround
+    photoDataUrl = null;
+  }
   isReady = true;
   hideLoading();
 }
@@ -373,7 +379,13 @@ function generateQRDataUrl() {
   small.height  = Math.round(canvas.height * scale);
   small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
 
-  return small.toDataURL('image/jpeg', 0.45);
+  try {
+    return small.toDataURL('image/jpeg', 0.45);
+  } catch (e) {
+    // Canvas is tainted (cross-origin images) - return a placeholder message
+    console.warn('Canvas tainted, QR will show message instead');
+    return 'Photo ready! Download from the app.';
+  }
 }
 
 let qrGenerated = false;
@@ -447,10 +459,54 @@ function closeQROnBackdrop(e) {
 }
 
 // Direct download (full quality) — also available as button inside modal
-function directDownload() {
-  if (!photoDataUrl) return;
+async function directDownload() {
+  const canvas = document.getElementById('result-canvas');
+  
+  // Try to get data URL directly from canvas
+  let dataUrl = null;
+  try {
+    dataUrl = canvas.toDataURL('image/jpeg', 0.93);
+  } catch (e) {
+    console.error('Canvas export failed:', e);
+  }
+  
+  // Fallback to cached version
+  if (!dataUrl && photoDataUrl) {
+    dataUrl = photoDataUrl;
+  }
+  
+  if (!dataUrl) {
+    alert('Cannot download: browser security blocked. Try right-clicking the photo → "Save Image"');
+    return;
+  }
+
+  // Try server-side download for better compatibility
+  try {
+    const response = await fetch('/api/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData: dataUrl })
+    });
+    
+    if (response.ok) {
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'thai-photobooth.jpg';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      return;
+    }
+  } catch (e) {
+    console.warn('Server download failed, trying client-side:', e);
+  }
+  
+  // Fallback: client-side download
   const link = document.createElement('a');
-  link.href     = photoDataUrl;
+  link.href     = dataUrl;
   link.download = 'thai-photobooth.jpg';
   document.body.appendChild(link);
   link.click();
