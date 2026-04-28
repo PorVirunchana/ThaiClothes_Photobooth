@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thai Photobooth – Choose Frame</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* ===== FRAME GRID ===== */
+  .frames-scroll-container { position: relative; }
+  .frames-track {
+    display: flex; gap: 16px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    padding: 10px 4px 16px;
+  }
+  .frames-track::-webkit-scrollbar { display: none; }
+
+  .frame-card {
+    flex: 0 0 calc(50% - 8px);
+    scroll-snap-align: start;
+    border: 2px solid rgba(201,145,61,0.25);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.3s;
+    position: relative;
+    aspect-ratio: 9/19;
+    background: rgba(0,0,0,0.3);
+  }
+  @media (min-width: 500px) { .frame-card { flex: 0 0 calc(33% - 11px); } }
+
+  .frame-card:hover { border-color: var(--gold); transform: scale(1.02); }
+  .frame-card.selected {
+    border-color: var(--gold-light);
+    box-shadow: 0 0 20px rgba(240,201,107,0.5);
+  }
+  .frame-card img { width: 100%; height: 100%; object-fit: cover; }
+
+  .frame-card .selected-badge {
+    position: absolute; top: 8px; right: 8px;
+    background: var(--gold); color: var(--brown);
+    border-radius: 50%; width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.75rem; font-weight: 700;
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .frame-card.selected .selected-badge { opacity: 1; }
+
+  .frame-placeholder {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem; opacity: 0.5;
+  }
+
+  .frame-name {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 20px 8px 8px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+    font-size: 0.7rem; text-align: center; color: var(--gold-light);
+    font-family: 'Cinzel', serif; letter-spacing: 1px;
+  }
+
+  .scroll-arrow {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(201,145,61,0.2); border: 1px solid rgba(201,145,61,0.4);
+    color: var(--gold-light); border-radius: 50%;
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 1.1rem; z-index: 2;
+    transition: all 0.2s; backdrop-filter: blur(4px);
+  }
+  .scroll-arrow:hover { background: rgba(201,145,61,0.4); }
+  .scroll-arrow.left { left: -14px; }
+  .scroll-arrow.right { right: -14px; }
+
+  .select-action { text-align: center; margin-top: 20px; }
+
+  .frame-tip {
+    text-align: center;
+    font-size: 0.75rem;
+    color: rgba(201,145,61,0.5);
+    margin-top: 10px;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+<div class="thai-bg"></div>
+
+<div class="loading-screen" id="loading">
+  <div class="loading-lotus">🪷</div>
+  <div class="loading-text">Thai Photobooth</div>
+</div>
+
+<div class="page">
+  <div class="header">
+    <span class="lotus-icon">🪷</span>
+    <h1>Thai Clothes<br>Photobooth</h1>
+    <div class="gold-line"></div>
+    <p class="subtitle">สวมชุดไทย · ถ่ายภาพสวยงาม</p>
+  </div>
+
+  <div class="steps-bar">
+    <div class="step-dot active">1</div>
+    <div class="step-line"></div>
+    <div class="step-dot">2</div>
+    <div class="step-line"></div>
+    <div class="step-dot">3</div>
+  </div>
+
+  <div class="panel">
+    <div class="step-label">Step 1 of 3</div>
+    <div class="page-title">Choose Your Frame · เลือกกรอบ</div>
+
+    <div class="frames-scroll-container">
+      <div class="scroll-arrow left" onclick="scrollFrames(-1)">‹</div>
+      <div class="frames-track" id="frames-track"></div>
+      <div class="scroll-arrow right" onclick="scrollFrames(1)">›</div>
+    </div>
+
+    <div class="frame-tip">← Scroll to browse frames · เลื่อนดูกรอบ →</div>
+
+    <div class="select-action">
+      <button class="btn-gold" onclick="goToCapture()">✦ Choose · เลือก</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Frame definitions ──────────────────────────────────────────────
+// Each frame can have:
+//   src        – path to the full frame PNG (with transparent photo holes)
+//   name       – display label
+//   emoji      – shown as placeholder if no image
+//   slots      – array of { x, y, w, h } as fractions (0–1) of frame dimensions
+//                These define where photos should be composited BEHIND the frame.
+//                Leave empty [] to composite photos as a full-bleed strip instead.
+const frames = [
+  {
+    name: 'Thai Gold',
+    src: 'GOLD.png',
+    emoji: '🏯',
+    // The frame image has 4 white rectangular slots stacked vertically.
+    // Approximate positions (tweak after measuring your image):
+    slots: [
+    { x: 0.060, y: 0.035, w: 0.88, h: 0.185 },
+    { x: 0.060, y: 0.235, w: 0.88, h: 0.185 },
+    { x: 0.060, y: 0.435, w: 0.88, h: 0.185 },
+    { x: 0.060, y: 0.635, w: 0.88, h: 0.185 }
+    ]
+  },
+  { name: 'Lotus Pink',
+    src: 'PINK.png', 
+    emoji: '🌸', 
+    slots: [
+    { x: 0.060, y: 0.035, w: 0.88, h: 0.185 },
+    { x: 0.060, y: 0.235, w: 0.88, h: 0.185 },
+    { x: 0.060, y: 0.435, w: 0.88, h: 0.185 },
+    { x: 0.060, y: 0.635, w: 0.88, h: 0.185 }
+    ]},
+  { name: 'Royal Blue',
+    src: 'BLUE.png', 
+    emoji: '👑', 
+    slots: [
+    { x: 0.060, y: 0.035, w: 0.88, h: 0.185 },
+    { x: 0.060, y: 0.235, w: 0.88, h: 0.185 },
+    { x: 0.060, y: 0.435, w: 0.88, h: 0.185 },
+    { x: 0.060, y: 0.635, w: 0.88, h: 0.185 }
+    ] }
+  // { name: 'Emerald Thai', src: 'EMERALD.png', emoji: '🐘', slots: [] },
+];
+
+let selectedIndex = 0;
+
+// ── Render cards ───────────────────────────────────────────────────
+function renderFrameCards() {
+  const track = document.getElementById('frames-track');
+  track.innerHTML = '';
+  frames.forEach((frame, i) => {
+    const card = document.createElement('div');
+    card.className = 'frame-card' + (i === selectedIndex ? ' selected' : '');
+    card.onclick = () => selectFrame(i);
+
+    const inner = frame.src
+      ? `<img src="${frame.src}" alt="${frame.name}" onerror="this.style.display='none'">`
+      : `<div class="frame-placeholder">${frame.emoji}</div>`;
+
+    card.innerHTML = `
+      ${inner}
+      <div class="frame-name">${frame.name}</div>
+      <div class="selected-badge">✓</div>
+    `;
+    track.appendChild(card);
+  });
+}
+
+function selectFrame(index) {
+  selectedIndex = index;
+  document.querySelectorAll('.frame-card').forEach((c, i) =>
+    c.classList.toggle('selected', i === index)
+  );
+}
+
+function scrollFrames(dir) {
+  document.getElementById('frames-track').scrollBy({ left: dir * 180, behavior: 'smooth' });
+}
+
+// ── Navigate to capture page ───────────────────────────────────────
+function goToCapture() {
+  // Save chosen frame to sessionStorage so capture.html can read it
+  sessionStorage.setItem('selectedFrame', JSON.stringify(frames[selectedIndex]));
+  window.location.href = 'capture.html';
+}
+
+// ── Init ───────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  renderFrameCards();
+  setTimeout(() => {
+    const l = document.getElementById('loading');
+    l.style.opacity = '0';
+    setTimeout(() => l.style.display = 'none', 500);
+  }, 1000);
+});
+</script>
+</body>
+</html>

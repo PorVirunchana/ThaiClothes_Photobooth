@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thai Photobooth – Your Photo</title>
+<link rel="stylesheet" href="style.css">
+<!-- QR code library (pure JS, no server needed) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  .result-strip-container {
+    display: flex; justify-content: center;
+    margin: 0 auto 22px;
+  }
+  #result-canvas {
+    max-width: 260px; width: 100%;
+    border-radius: 12px;
+    border: 2px solid rgba(201,145,61,0.5);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 30px rgba(201,145,61,0.25);
+    animation: fadeUp 0.7s ease;
+  }
+
+  .result-actions {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }
+
+  /* ── Music ── */
+  .music-indicator {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 0.8rem; color: rgba(240,201,107,0.75);
+    padding: 8px 18px;
+    background: rgba(201,145,61,0.08);
+    border: 1px solid rgba(201,145,61,0.2);
+    border-radius: 20px; cursor: pointer;
+    transition: background 0.2s;
+  }
+  .music-indicator:hover { background: rgba(201,145,61,0.15); }
+  .music-bars { display: flex; gap: 2px; align-items: flex-end; height: 16px; }
+  .music-bar {
+    width: 3px; background: var(--gold); border-radius: 1px;
+    animation: bounce 0.8s ease-in-out infinite;
+  }
+  .music-bar:nth-child(1) { height: 6px;  animation-delay: 0s; }
+  .music-bar:nth-child(2) { height: 14px; animation-delay: 0.15s; }
+  .music-bar:nth-child(3) { height: 10px; animation-delay: 0.3s; }
+  .music-bar:nth-child(4) { height: 7px;  animation-delay: 0.45s; }
+  @keyframes bounce {
+    0%, 100% { transform: scaleY(0.4); }
+    50%       { transform: scaleY(1); }
+  }
+  .music-indicator.muted .music-bars { opacity: 0.3; }
+  .music-indicator.muted .music-bar  { animation: none; transform: scaleY(0.4); }
+
+  /* ══════════════════════════════════════════
+     QR MODAL
+  ══════════════════════════════════════════ */
+  .qr-modal-backdrop {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.82);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s;
+    backdrop-filter: blur(6px);
+  }
+  .qr-modal-backdrop.visible {
+    opacity: 1; pointer-events: all;
+  }
+
+  .qr-modal {
+    background: linear-gradient(145deg, #3D1F00, #1A0800);
+    border: 1px solid rgba(201,145,61,0.5);
+    border-radius: 20px;
+    padding: 30px 24px 24px;
+    max-width: 340px; width: 100%;
+    text-align: center;
+    box-shadow: 0 0 60px rgba(201,145,61,0.2), 0 30px 80px rgba(0,0,0,0.6);
+    transform: translateY(20px);
+    transition: transform 0.3s;
+    position: relative;
+  }
+  .qr-modal-backdrop.visible .qr-modal {
+    transform: translateY(0);
+  }
+
+  .qr-modal-close {
+    position: absolute; top: 12px; right: 14px;
+    background: none; border: none;
+    color: rgba(201,145,61,0.5); font-size: 1.4rem;
+    cursor: pointer; line-height: 1;
+    transition: color 0.2s;
+  }
+  .qr-modal-close:hover { color: var(--gold-light); }
+
+  .qr-modal-title {
+    font-family: 'Cinzel', serif;
+    font-size: 1rem; font-weight: 700;
+    color: var(--gold-light);
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+  .qr-modal-sub {
+    font-size: 0.75rem;
+    color: rgba(201,145,61,0.55);
+    letter-spacing: 2px;
+    margin-bottom: 20px;
+  }
+
+  /* QR code box */
+  .qr-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 14px;
+    display: inline-block;
+    margin-bottom: 18px;
+    box-shadow: 0 0 24px rgba(201,145,61,0.3);
+  }
+  #qr-code { display: block; }   /* qrcodejs renders a canvas/img here */
+
+  .qr-timer {
+    font-size: 0.72rem;
+    color: rgba(201,145,61,0.5);
+    letter-spacing: 1px;
+    margin-bottom: 16px;
+  }
+  .qr-timer span {
+    color: var(--gold-light);
+    font-weight: 700;
+  }
+
+  /* Direct download fallback inside modal */
+  .qr-direct-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: none;
+    border: 1px solid rgba(201,145,61,0.35);
+    color: rgba(240,201,107,0.7);
+    border-radius: 50px; padding: 8px 20px;
+    font-size: 0.78rem; cursor: pointer;
+    transition: all 0.2s; letter-spacing: 1px;
+  }
+  .qr-direct-btn:hover {
+    background: rgba(201,145,61,0.1);
+    border-color: var(--gold);
+    color: var(--gold-light);
+  }
+
+  .qr-steps {
+    font-size: 0.72rem;
+    color: rgba(201,145,61,0.45);
+    line-height: 1.8;
+    margin-bottom: 16px;
+  }
+  .qr-divider {
+    width: 60px; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(201,145,61,0.3), transparent);
+    margin: 14px auto;
+  }
+</style>
+</head>
+<body>
+
+<div class="thai-bg"></div>
+
+<div class="loading-screen" id="loading">
+  <div class="loading-lotus">🪷</div>
+  <div class="loading-text">Building your photo…</div>
+</div>
+
+<!-- ══ Main page ══ -->
+<div class="page">
+  <div class="header">
+    <span class="lotus-icon">🌸</span>
+    <h1>Your Photo</h1>
+    <div class="gold-line"></div>
+    <p class="subtitle">ภาพถ่ายของคุณ</p>
+  </div>
+
+  <div class="steps-bar">
+    <div class="step-dot done">✓</div>
+    <div class="step-line done"></div>
+    <div class="step-dot done">✓</div>
+    <div class="step-line done"></div>
+    <div class="step-dot active">3</div>
+  </div>
+
+  <div class="panel" style="max-width:420px">
+    <div class="result-strip-container">
+      <canvas id="result-canvas"></canvas>
+    </div>
+
+    <div class="result-actions">
+      <div class="music-indicator" id="music-indicator" onclick="toggleMusic()">
+        <div class="music-bars">
+          <div class="music-bar"></div><div class="music-bar"></div>
+          <div class="music-bar"></div><div class="music-bar"></div>
+        </div>
+        <span id="music-label">ออเจ้าเอย · Playing</span>
+      </div>
+
+      <button class="btn-gold" id="download-btn" onclick="showQR()">
+        ⬇ Download · บันทึก
+      </button>
+      <button class="btn-outline" onclick="restart()">↺ Start Over · เริ่มใหม่</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ QR Modal ══ -->
+<div class="qr-modal-backdrop" id="qr-backdrop" onclick="closeQROnBackdrop(event)">
+  <div class="qr-modal" id="qr-modal">
+    <button class="qr-modal-close" onclick="closeQR()">✕</button>
+
+    <div class="qr-modal-title">📲 Scan to Download</div>
+    <div class="qr-modal-sub">สแกน QR เพื่อบันทึกรูป</div>
+
+    <div class="qr-box">
+      <div id="qr-code"></div>
+    </div>
+
+    <div class="qr-timer" id="qr-timer">
+      QR expires in <span id="qr-countdown">120</span>s
+    </div>
+
+    <div class="qr-steps">
+      1. Open camera on your phone<br>
+      2. Point at the QR code<br>
+      3. Tap the link → Save image
+    </div>
+
+    <div class="qr-divider"></div>
+
+    <button class="qr-direct-btn" onclick="directDownload()">
+      ⬇ Or save directly on this device
+    </button>
+  </div>
+</div>
+
+<audio id="bg-music" loop>
+  <source src="orjao.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+// ── Data ──────────────────────────────────────────────────────────
+const frameData      = JSON.parse(sessionStorage.getItem('selectedFrame')  || 'null');
+const capturedPhotos = JSON.parse(sessionStorage.getItem('capturedPhotos') || '[]');
+if (!capturedPhotos.length) { window.location.href = 'index.html'; }
+
+let isReady   = false;
+let qrTimer   = null;
+let photoDataUrl = null;   // cached final image data URL for QR + download
+
+// ── Build photo strip ─────────────────────────────────────────────
+function buildPhotoStrip() {
+  const canvas = document.getElementById('result-canvas');
+  const ctx    = canvas.getContext('2d');
+  const slots  = (frameData && frameData.slots && frameData.slots.length >= 4)
+                  ? frameData.slots.slice(0, 4) : null;
+  const W = 400;
+
+  if (frameData && frameData.src && slots) {
+    const frameImg = new Image();
+    frameImg.onload = () => {
+      const scale = W / frameImg.naturalWidth;
+      const H = Math.round(frameImg.naturalHeight * scale);
+      canvas.width = W; canvas.height = H;
+      ctx.fillStyle = '#1A0800';
+      ctx.fillRect(0, 0, W, H);
+
+      let loaded = 0;
+      capturedPhotos.forEach((src, i) => {
+        if (!slots[i]) { loaded++; return; }
+        const img = new Image();
+        const done = () => {
+          loaded++;
+          if (loaded === capturedPhotos.length) {
+            ctx.drawImage(frameImg, 0, 0, W, H);
+            finishStrip(canvas);
+          }
+        };
+        img.onload = () => {
+          const s = slots[i];
+          const sx = s.x * W, sy = s.y * H, sw = s.w * W, sh = s.h * H;
+          ctx.save();
+          ctx.beginPath(); ctx.rect(sx, sy, sw, sh); ctx.clip();
+          const sc = Math.max(sw / img.width, sh / img.height);
+          ctx.drawImage(img, sx + (sw - img.width * sc) / 2, sy + (sh - img.height * sc) / 2, img.width * sc, img.height * sc);
+          ctx.restore();
+          done();
+        };
+        img.onerror = done;
+        img.src = src;
+      });
+    };
+    frameImg.onerror = () => buildFallbackStrip(W);
+    frameImg.src = frameData.src;
+  } else {
+    buildFallbackStrip(W);
+  }
+}
+
+function buildFallbackStrip(W) {
+  const canvas = document.getElementById('result-canvas');
+  const ctx    = canvas.getContext('2d');
+  const PAD = 18, GAP = 10, N = capturedPhotos.length;
+  const PHOTO_H = 220;
+  const H = PAD + (PHOTO_H + GAP) * N - GAP + PAD + 40;
+  canvas.width = W; canvas.height = H;
+  const bg = ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#3D1800'); bg.addColorStop(1,'#1A0800');
+  ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#C9913D'; ctx.lineWidth=3; ctx.strokeRect(5,5,W-10,H-10);
+
+  let loaded = 0;
+  capturedPhotos.forEach((src, i) => {
+    const img = new Image();
+    img.onload = () => {
+      const y = PAD + i*(PHOTO_H+GAP), x = PAD, pw = W-PAD*2;
+      ctx.fillStyle='#fff'; rr(ctx,x,y,pw,PHOTO_H,5); ctx.fill();
+      ctx.save(); rr(ctx,x,y,pw,PHOTO_H,5); ctx.clip();
+      const sc = Math.max(pw/img.width, PHOTO_H/img.height);
+      ctx.drawImage(img, x+(pw-img.width*sc)/2, y+(PHOTO_H-img.height*sc)/2, img.width*sc, img.height*sc);
+      ctx.restore();
+      ctx.strokeStyle='rgba(201,145,61,0.4)'; ctx.lineWidth=1.5; rr(ctx,x,y,pw,PHOTO_H,5); ctx.stroke();
+      loaded++;
+      if (loaded === capturedPhotos.length) finishStrip(canvas);
+    };
+    img.onerror = () => { loaded++; if (loaded===capturedPhotos.length) finishStrip(canvas); };
+    img.src = src;
+  });
+}
+
+function rr(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+
+function finishStrip(canvas) {
+  // Cache the final image as a data URL
+  photoDataUrl = canvas.toDataURL('image/jpeg', 0.93);
+  isReady = true;
+  hideLoading();
+}
+
+// ── QR Modal ──────────────────────────────────────────────────────
+/*
+  Strategy:
+  The QR code encodes a data: URL of the JPEG image.
+  When scanned, the browser opens the image directly and the user
+  can long-press → "Save Image" (works on iOS Safari & Android Chrome).
+
+  Limitation: data URLs are large. QR libraries handle up to ~2-3KB text well.
+  A full JPEG can be 100-400KB which is too large for a QR code.
+
+  Solution: we generate a LOWER-res JPEG (quality 0.4, width capped at 600px)
+  just for the QR URL — the direct-download button still uses full quality.
+  This keeps the QR data under ~80KB encoded as base64 (~110KB text),
+  which modern QR readers handle fine as a direct link.
+
+  Alternatively, if you host this on a server, replace generateQRDataUrl()
+  to return a real hosted URL instead — the QR will be smaller & faster.
+*/
+function generateQRDataUrl() {
+  const canvas  = document.getElementById('result-canvas');
+
+  // Create a smaller version for the QR payload
+  const small   = document.createElement('canvas');
+  const maxW    = 500;
+  const scale   = Math.min(1, maxW / canvas.width);
+  small.width   = Math.round(canvas.width  * scale);
+  small.height  = Math.round(canvas.height * scale);
+  small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
+
+  return small.toDataURL('image/jpeg', 0.45);
+}
+
+let qrGenerated = false;
+
+function showQR() {
+  if (!isReady) { alert('Photo still building, please wait…'); return; }
+
+  const backdrop = document.getElementById('qr-backdrop');
+  backdrop.classList.add('visible');
+
+  if (!qrGenerated) {
+    buildQRCode();
+    qrGenerated = true;
+  }
+  startQRTimer();
+}
+
+function buildQRCode() {
+  const container = document.getElementById('qr-code');
+  container.innerHTML = ''; // clear any previous
+
+  const dataUrl = generateQRDataUrl();
+
+  // qrcodejs renders into #qr-code
+  new QRCode(container, {
+    text:          dataUrl,
+    width:         200,
+    height:        200,
+    colorDark:     '#1A0800',
+    colorLight:    '#ffffff',
+    correctLevel:  QRCode.CorrectLevel.L,  // L = lowest error correction → fits more data
+  });
+}
+
+let countdownInterval = null;
+let secondsLeft = 120;
+
+function startQRTimer() {
+  clearInterval(countdownInterval);
+  secondsLeft = 120;
+  document.getElementById('qr-countdown').textContent = secondsLeft;
+  document.getElementById('qr-timer').style.color = 'rgba(201,145,61,0.5)';
+
+  countdownInterval = setInterval(() => {
+    secondsLeft--;
+    const el = document.getElementById('qr-countdown');
+    if (el) el.textContent = secondsLeft;
+
+    if (secondsLeft <= 10) {
+      document.getElementById('qr-timer').style.color = 'rgba(220,80,80,0.8)';
+    }
+    if (secondsLeft <= 0) {
+      clearInterval(countdownInterval);
+      // Regenerate QR on expiry
+      qrGenerated = false;
+      buildQRCode();
+      qrGenerated = true;
+      secondsLeft = 120;
+      startQRTimer();
+    }
+  }, 1000);
+}
+
+function closeQR() {
+  document.getElementById('qr-backdrop').classList.remove('visible');
+  clearInterval(countdownInterval);
+}
+
+function closeQROnBackdrop(e) {
+  if (e.target === document.getElementById('qr-backdrop')) closeQR();
+}
+
+// Direct download (full quality) — also available as button inside modal
+function directDownload() {
+  if (!photoDataUrl) return;
+  const link = document.createElement('a');
+  link.href     = photoDataUrl;
+  link.download = 'thai-photobooth.jpg';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// ── Music ─────────────────────────────────────────────────────────
+let musicMuted = false;
+
+function playMusic() {
+  const audio = document.getElementById('bg-music');
+  audio.volume = 0.6;
+  audio.play().catch(() => {
+    document.getElementById('music-label').textContent = 'Tap to play music';
+    document.getElementById('music-indicator').classList.add('muted');
+    musicMuted = true;
+  });
+}
+
+function toggleMusic() {
+  const audio     = document.getElementById('bg-music');
+  const indicator = document.getElementById('music-indicator');
+  const label     = document.getElementById('music-label');
+  if (musicMuted) {
+    audio.play();
+    label.textContent = 'ออเจ้าเอย · Playing';
+    indicator.classList.remove('muted');
+    musicMuted = false;
+  } else {
+    audio.pause();
+    label.textContent = 'ออเจ้าเอย · Paused';
+    indicator.classList.add('muted');
+    musicMuted = true;
+  }
+}
+
+// ── Misc ──────────────────────────────────────────────────────────
+function restart() {
+  clearInterval(countdownInterval);
+  sessionStorage.clear();
+  document.getElementById('bg-music').pause();
+  window.location.href = 'index.html';
+}
+
+function hideLoading() {
+  const l = document.getElementById('loading');
+  l.style.opacity = '0';
+  setTimeout(() => l.style.display = 'none', 400);
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  buildPhotoStrip();
+  playMusic();
+
+  // Safety net: force ready after 12s if image building stalls
+  setTimeout(() => {
+    if (!isReady) { isReady = true; hideLoading(); }
+  }, 12000);
+});
+</script>
+</body>
+</html>

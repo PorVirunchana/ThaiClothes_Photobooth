@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thai Photobooth – Capture</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .camera-wrapper {
+    width: 100%; max-width: 340px;
+    margin: 0 auto 16px;
+  }
+
+  /*
+    .camera-container matches the frame image's exact aspect ratio: 1414 × 4000
+    The frame PNG is rendered at full size here; the <video> is positioned
+    absolutely behind it, clipped to each black slot using pixel values.
+  */
+  .camera-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1414 / 4000;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 2px solid rgba(201,145,61,0.4);
+  }
+
+  #video {
+    position: absolute;
+    object-fit: cover;
+    transform: scaleX(-1);
+    /* top/left/width/height set by JS in px per-slot */
+    transition: top 0.35s ease, left 0.35s ease,
+                width 0.35s ease, height 0.35s ease;
+    z-index: 1;
+  }
+
+  /* Frame overlay on TOP — opaque borders hide feed outside slots */
+  .frame-overlay {
+    position: absolute; inset: 0; z-index: 2;
+    pointer-events: none;
+  }
+  .frame-overlay img {
+    width: 100%; height: 100%;
+    object-fit: fill; /* fill = no scaling, 1-to-1 pixel match */
+    display: block;
+  }
+
+  .slot-highlight {
+    position: absolute; z-index: 3;
+    border: 2px solid rgba(240,201,107,0.7);
+    border-radius: 3px;
+    pointer-events: none;
+    transition: top 0.35s ease, left 0.35s ease,
+                width 0.35s ease, height 0.35s ease;
+    animation: slotGlow 1.4s ease-in-out infinite;
+    display: none;
+  }
+  @keyframes slotGlow {
+    0%,100% { box-shadow: inset 0 0 10px rgba(240,201,107,0.15); }
+    50%      { box-shadow: inset 0 0 22px rgba(240,201,107,0.35); }
+  }
+
+  .countdown-display {
+    position: absolute; inset: 0; z-index: 4;
+    display: none;
+    align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .countdown-display.visible { display: flex; }
+  .countdown-number {
+    font-family: 'Cinzel', serif;
+    font-size: 5rem; font-weight: 900;
+    background: linear-gradient(135deg, var(--gold-light), var(--gold));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 12px rgba(201,145,61,0.8));
+    animation: countPop 0.9s ease-in-out forwards;
+  }
+  @keyframes countPop {
+    0%   { transform: scale(1.6); opacity: 0; }
+    40%  { transform: scale(1);   opacity: 1; }
+    100% { transform: scale(0.8); opacity: 0.5; }
+  }
+
+  .flash-overlay {
+    position: absolute; inset: 0; z-index: 5;
+    background: #fff; opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.05s;
+  }
+  .flash-overlay.on { opacity: 1; }
+
+  #capture-canvas { display: none; }
+
+  .camera-error {
+    position: absolute; inset: 0; z-index: 6;
+    display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.88); color: var(--gold-light);
+    font-size: 0.82rem; text-align: center; padding: 20px; gap: 10px;
+  }
+  .camera-error.visible { display: flex; }
+  .camera-error .err-icon { font-size: 2.4rem; }
+
+  .photo-progress {
+    display: flex; gap: 8px; justify-content: center;
+    margin-bottom: 14px;
+  }
+  .photo-dot {
+    width: 48px; height: 48px; border-radius: 8px;
+    border: 2px solid rgba(201,145,61,0.3);
+    background: rgba(0,0,0,0.3); overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(201,145,61,0.4); font-size: 0.72rem;
+    font-family: 'Cinzel', serif;
+    transition: border-color 0.25s, box-shadow 0.25s;
+  }
+  .photo-dot.taken       { border-color: var(--gold); }
+  .photo-dot.active-slot { border-color: var(--gold-light); box-shadow: 0 0 10px rgba(240,201,107,0.45); }
+  .photo-dot img { width: 100%; height: 100%; object-fit: cover; }
+
+  .capture-info {
+    text-align: center; font-size: 0.82rem;
+    color: rgba(240,201,107,0.7);
+    min-height: 20px; margin-bottom: 14px; letter-spacing: 1px;
+  }
+  .capture-action { text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="thai-bg"></div>
+
+<div class="page">
+  <div class="header">
+    <span class="lotus-icon">📷</span>
+    <h1>Capture</h1>
+    <div class="gold-line"></div>
+    <p class="subtitle">ถ่ายภาพ · 4 shots</p>
+  </div>
+
+  <div class="steps-bar">
+    <div class="step-dot done">✓</div>
+    <div class="step-line done"></div>
+    <div class="step-dot active">2</div>
+    <div class="step-line"></div>
+    <div class="step-dot">3</div>
+  </div>
+
+  <div class="panel" style="max-width:420px">
+
+    <div class="photo-progress">
+      <div class="photo-dot active-slot" id="dot-0">1</div>
+      <div class="photo-dot"            id="dot-1">2</div>
+      <div class="photo-dot"            id="dot-2">3</div>
+      <div class="photo-dot"            id="dot-3">4</div>
+    </div>
+
+    <div class="camera-wrapper">
+      <div class="camera-container" id="camera-container">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="slot-highlight" id="slot-highlight"></div>
+        <div class="frame-overlay"  id="frame-overlay"></div>
+        <div class="countdown-display" id="countdown-display">
+          <div class="countdown-number" id="countdown-number">3</div>
+        </div>
+        <div class="flash-overlay" id="flash-overlay"></div>
+        <div class="camera-error"  id="camera-error">
+          <span class="err-icon">📷</span>
+          <strong>Camera access needed</strong>
+          <span>Please allow camera permission and refresh.</span>
+        </div>
+        <canvas id="capture-canvas"></canvas>
+      </div>
+    </div>
+
+    <div class="capture-info" id="capture-info">Press Start to begin · กดเริ่ม</div>
+    <div class="capture-action">
+      <button class="btn-gold" id="start-btn" onclick="startCapture()">▶ Start · เริ่ม</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const frameData = JSON.parse(sessionStorage.getItem('selectedFrame') || 'null');
+if (!frameData) { window.location.href = 'index.html'; }
+
+/*
+  SLOT COORDINATES — measured in pixels from frame1.png (1414 × 4000)
+  then converted to fractions.
+
+  All 4 slots are the SAME size and x-position.
+  Root cause of the old bug: slots 2 & 4 had wrong x values (0.32)
+  which pushed the video to the right, making it look unfilled on the left.
+
+  Correct values from pixel measurement:
+    x=85, w=1243 → x_frac=0.0601, w_frac=0.8791  (same for all 4)
+    Slot 1: y=142,  h=748  → y=0.0355, h=0.1870
+    Slot 2: y=937,  h=749  → y=0.2343, h=0.1872
+    Slot 3: y=1734, h=746  → y=0.4335, h=0.1865
+    Slot 4: y=2526, h=744  → y=0.6315, h=0.1860
+*/
+const SLOTS = (frameData && frameData.slots && frameData.slots.length === 4)
+  ? frameData.slots
+  : [
+      { x: 0.0601, y: 0.0355, w: 0.8791, h: 0.1870 },
+      { x: 0.0601, y: 0.2343, w: 0.8791, h: 0.1872 },
+      { x: 0.0601, y: 0.4335, w: 0.8791, h: 0.1865 },
+      { x: 0.0601, y: 0.6315, w: 0.8791, h: 0.1860 },
+    ];
+
+const TOTAL_SHOTS = 4;
+let capturedPhotos = [];
+let stream = null;
+let capturing = false;
+let currentShot = 0;
+
+// ── Camera ────────────────────────────────────────────────────────
+async function initCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    const video = document.getElementById('video');
+    video.srcObject = stream;
+    video.onloadedmetadata = () => positionVideoForSlot(0);
+  } catch (e) {
+    document.getElementById('camera-error').classList.add('visible');
+    document.getElementById('start-btn').disabled = true;
+    document.getElementById('capture-info').textContent = 'Camera unavailable';
+  }
+}
+
+function setupFrameOverlay() {
+  if (frameData && frameData.src) {
+    document.getElementById('frame-overlay').innerHTML =
+      `<img src="${frameData.src}" alt="frame">`;
+  }
+}
+
+/*
+  positionVideoForSlot(i)
+  ──────────────────────────────────────────────────────────────────
+  Sets the <video> position in PIXELS so it fills exactly one black
+  slot in the frame image.
+
+  Why px not %:
+  - The video element has object-fit:cover. For this to work correctly,
+    both width AND height must be set as fixed pixel values — percentage
+    heights are unreliable inside absolutely-positioned containers.
+  - Using px ensures the video fills the slot precisely regardless of
+    how the browser lays out the container.
+*/
+function positionVideoForSlot(i) {
+  const video     = document.getElementById('video');
+  const highlight = document.getElementById('slot-highlight');
+  const container = document.getElementById('camera-container');
+
+  // Get the container's rendered pixel size
+  const cW = container.offsetWidth;
+  const cH = container.offsetHeight;
+
+  const s = SLOTS[i];
+
+  // Convert fractions to px
+  const top    = s.y * cH;
+  const left   = s.x * cW;
+  const width  = s.w * cW;
+  const height = s.h * cH;
+
+  video.style.top    = top    + 'px';
+  video.style.left   = left   + 'px';
+  video.style.width  = width  + 'px';
+  video.style.height = height + 'px';
+
+  highlight.style.top    = top    + 'px';
+  highlight.style.left   = left   + 'px';
+  highlight.style.width  = width  + 'px';
+  highlight.style.height = height + 'px';
+  highlight.style.display = 'block';
+}
+
+// ── Capture flow ──────────────────────────────────────────────────
+async function startCapture() {
+  if (capturing) return;
+  capturing = true;
+  capturedPhotos = [];
+  document.getElementById('start-btn').disabled = true;
+
+  for (let i = 0; i < TOTAL_SHOTS; i++) {
+    currentShot = i;
+
+    document.querySelectorAll('.photo-dot').forEach((d, j) =>
+      d.classList.toggle('active-slot', j === i)
+    );
+    document.getElementById('capture-info').textContent =
+      `Photo ${i + 1} of ${TOTAL_SHOTS} · ภาพที่ ${i + 1}`;
+
+    positionVideoForSlot(i);
+    await sleep(450);
+    await runCountdown();
+    snapPhoto(i);
+    await sleep(650);
+  }
+
+  stopCamera();
+  sessionStorage.setItem('capturedPhotos', JSON.stringify(capturedPhotos));
+  window.location.href = 'result.html';
+}
+
+async function runCountdown() {
+  const display = document.getElementById('countdown-display');
+  const numEl   = document.getElementById('countdown-number');
+  display.classList.add('visible');
+  for (let n = 3; n >= 1; n--) {
+    numEl.textContent = n;
+    numEl.style.animation = 'none';
+    numEl.offsetHeight; // reflow
+    numEl.style.animation = 'countPop 0.9s ease-in-out forwards';
+    await sleep(950);
+  }
+  display.classList.remove('visible');
+}
+
+function snapPhoto(index) {
+  const video  = document.getElementById('video');
+  const canvas = document.getElementById('capture-canvas');
+  const ctx    = canvas.getContext('2d');
+
+  canvas.width  = video.videoWidth  || 1280;
+  canvas.height = video.videoHeight || 720;
+
+  // Un-mirror the CSS scaleX(-1)
+  ctx.save();
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.93);
+  capturedPhotos.push(dataUrl);
+
+  // Flash
+  const flash = document.getElementById('flash-overlay');
+  flash.classList.add('on');
+  setTimeout(() => flash.classList.remove('on'), 140);
+
+  // Thumbnail dot
+  const dot = document.getElementById(`dot-${index}`);
+  dot.classList.remove('active-slot');
+  dot.classList.add('taken');
+  const thumb = new Image();
+  thumb.src = dataUrl;
+  thumb.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:6px';
+  dot.innerHTML = '';
+  dot.appendChild(thumb);
+}
+
+function stopCamera() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+window.addEventListener('load', () => {
+  setupFrameOverlay();
+  initCamera();
+});
+window.addEventListener('resize', () => positionVideoForSlot(currentShot));
+</script>
+</body>
+</html>
