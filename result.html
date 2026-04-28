@@ -300,9 +300,15 @@ function toggleMusic() {
 
 // ── Misc ──────────────────────────────────────────────────────────
 function restart() {
-  clearInterval(countdownInterval);
+  if (typeof countdownInterval !== 'undefined') {
+    clearInterval(countdownInterval);
+  }
+
   sessionStorage.clear();
-  document.getElementById('bg-music').pause();
+
+  const audio = document.getElementById('bg-music');
+  if (audio) audio.pause();
+
   window.location.href = 'index.html';
 }
 

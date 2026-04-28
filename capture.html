@@ -8,7 +8,7 @@
 <style>
   .camera-wrapper {
     width: 100%; max-width: 340px;
-    margin: 0 auto 16px;
+    margin: 20px auto 16px;
   }
 
   /*
@@ -158,6 +158,11 @@
       <div class="photo-dot"            id="dot-3">4</div>
     </div>
 
+    <div class="capture-info" id="capture-info">Press Start to begin · กดเริ่ม</div>
+    <div class="capture-action">
+      <button class="btn-gold" id="start-btn" onclick="startCapture()">▶ Start · เริ่ม</button>
+    </div>
+
     <div class="camera-wrapper">
       <div class="camera-container" id="camera-container">
         <video id="video" autoplay playsinline muted></video>
@@ -174,11 +179,6 @@
         </div>
         <canvas id="capture-canvas"></canvas>
       </div>
-    </div>
-
-    <div class="capture-info" id="capture-info">Press Start to begin · กดเริ่ม</div>
-    <div class="capture-action">
-      <button class="btn-gold" id="start-btn" onclick="startCapture()">▶ Start · เริ่ม</button>
     </div>
   </div>
 </div>
